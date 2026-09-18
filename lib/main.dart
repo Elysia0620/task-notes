@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' as ex;
-import 'package:intl/intl.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -69,7 +68,7 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
   List<Task> _tasks = [];
-  List<String> _templates = ['每日例会', '周报撰写', '定期备份'];
+  final List<String> _templates = ['每日例会', '周报撰写', '定期备份'];
   
   // 设置选项
   bool _launchAtStartup = false;
