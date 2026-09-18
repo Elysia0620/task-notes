@@ -1,0 +1,243 @@
+name: 初始化拾序并验证打包
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  initialize:
+    name: 创建 Flutter 工程
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+
+    steps:
+      - name: 下载仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: 创建工程
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f pubspec.yaml ]; then
+            echo "仓库已有 Flutter 工程，跳过初始化。"
+            exit 0
+          fi
+
+          # 避免覆盖仓库中已有的同名文件或目录。
+          for item in android windows lib test pubspec.lock \
+            analysis_options.yaml .metadata .gitignore; do
+            if [ -e "$item" ]; then
+              echo "::error::发现已有路径 $item，已停止初始化以避免覆盖。"
+              exit 1
+            fi
+          done
+
+          generated_dir="$(mktemp -d)"
+
+          flutter create \
+            --project-name shixu \
+            --org com.shixu \
+            --platforms android,windows \
+            --description "拾序：离线任务管理" \
+            "$generated_dir/shixu"
+
+          # 保留仓库原有 README 和 GitHub 配置。
+          rm -f "$generated_dir/shixu/README.md"
+          cp -a "$generated_dir/shixu/." .
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          content = manifest.read_text(encoding="utf-8")
+          content = content.replace(
+              'android:label="shixu"',
+              'android:label="拾序"',
+          )
+          manifest.write_text(content, encoding="utf-8")
+
+          main = Path("windows/runner/main.cpp")
+          content = main.read_text(encoding="utf-8")
+          content = content.replace(
+              'L"shixu"',
+              'L"\\u62FE\\u5E8F"',
+          )
+          main.write_text(content, encoding="utf-8")
+          PY
+
+      - name: 检查工程
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: 保存生成的源码
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Initialize Shixu Flutter app for Windows and Android"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: 记录源码版本
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  android:
+    name: 构建安卓 ARM64 验证包
+    needs: initialize
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.initialize.outputs.source_sha }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: 安装依赖
+        run: flutter pub get
+
+      - name: 构建 APK
+        run: flutter build apk --debug --target-platform android-arm64
+
+      - name: 整理产物
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-debug.apk \
+            dist/Shixu-Android-arm64-validation.apk
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shixu-Android-arm64-validation
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: 构建 Windows 便携版和安装版
+    needs: initialize
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.initialize.outputs.source_sha }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: 安装依赖
+        run: flutter pub get
+
+      - name: 构建 Windows x64
+        run: flutter build windows --release
+
+      - name: 制作便携 ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive `
+            -Path "build/windows/x64/runner/Release/*" `
+            -DestinationPath "dist/Shixu-Windows-x64-portable.zip" `
+            -Force
+
+      - name: 准备 Inno Setup
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              throw "Inno Setup 安装失败"
+            }
+          }
+          if (-not (Test-Path $compiler)) {
+            throw "未找到 Inno Setup 编译器"
+          }
+
+      - name: 制作安装程序
+        shell: pwsh
+        run: |
+          $installerScript = @'
+          [Setup]
+          AppId=Shixu.TaskManager
+          AppName=拾序
+          AppVersion=0.1.0
+          AppPublisher=Shixu
+          DefaultDirName={localappdata}\Programs\Shixu
+          DefaultGroupName=拾序
+          DisableProgramGroupPage=yes
+          PrivilegesRequired=lowest
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          OutputDir=dist
+          OutputBaseFilename=Shixu-Windows-x64-setup
+          Compression=lzma2
+          SolidCompression=yes
+          WizardStyle=modern
+          UninstallDisplayIcon={app}\shixu.exe
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
+
+          [Files]
+          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{group}\拾序"; Filename: "{app}\shixu.exe"
+          Name: "{autodesktop}\拾序"; Filename: "{app}\shixu.exe"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\shixu.exe"; Description: "Launch Shixu"; Flags: nowait postinstall skipifsilent
+          '@
+
+          $installerScript | Set-Content -Path installer.iss -Encoding utf8BOM
+
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
+          if ($LASTEXITCODE -ne 0) {
+            throw "安装程序编译失败"
+          }
+
+      - name: 上传 Windows 便携版
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shixu-Windows-x64-portable
+          path: dist/*portable.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 上传 Windows 安装版
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shixu-Windows-x64-setup
+          path: dist/*setup.exe
+          if-no-files-found: error
+          retention-days: 14
