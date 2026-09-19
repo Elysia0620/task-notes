@@ -150,7 +150,6 @@ class _MainPageState extends State<MainPage> {
     TaskTemplate(id: '3', name: '系统数据定期备份', defaultCategory: '运维', defaultPriority: Priority.low),
   ];
 
-  // 系统设置持久化变量
   bool _launchAtStartup = false;
   bool _minimizeToTray = true;
   bool _enableReminders = true;
@@ -164,21 +163,18 @@ class _MainPageState extends State<MainPage> {
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // 加载任务
     final String? tasksJson = prefs.getString('shixu_tasks');
     if (tasksJson != null) {
       final List<dynamic> list = jsonDecode(tasksJson);
       _tasks = list.map((e) => Task.fromJson(e)).toList();
     }
 
-    // 加载模板
     final String? tplJson = prefs.getString('shixu_templates');
     if (tplJson != null) {
       final List<dynamic> list = jsonDecode(tplJson);
       _templates = list.map((e) => TaskTemplate.fromJson(e)).toList();
     }
 
-    // 加载设置
     setState(() {
       _launchAtStartup = prefs.getBool('launchAtStartup') ?? false;
       _minimizeToTray = prefs.getBool('minimizeToTray') ?? true;
@@ -217,7 +213,6 @@ class _MainPageState extends State<MainPage> {
     _saveTasks();
   }
 
-  // 导出示例 Excel 模板
   Future<void> _exportExcelTemplate() async {
     var excel = ex.Excel.createExcel();
     ex.Sheet sheet = excel['Sheet1'];
@@ -258,7 +253,6 @@ class _MainPageState extends State<MainPage> {
     }
   }
 
-  // 导入 Excel 任务带字段校验
   Future<void> _importExcel() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -435,7 +429,7 @@ class _MainPageState extends State<MainPage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: task.priority.color.withOpacity(0.2),
+                  color: task.priority.color.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -611,7 +605,7 @@ class _MainPageState extends State<MainPage> {
                   decoration: const InputDecoration(labelText: '分类'),
                 ),
                 DropdownButtonFormField<Priority>(
-                  value: priority,
+                  initialValue: priority,
                   decoration: const InputDecoration(labelText: '优先级'),
                   items: Priority.values.map((p) => DropdownMenuItem(value: p, child: Text(p.label))).toList(),
                   onChanged: (val) {
@@ -621,7 +615,7 @@ class _MainPageState extends State<MainPage> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Text(selectedDate == null ? '截止时间: 未设置' : '截止: ${DateFormat('yyyy-MM-DD').format(selectedDate!)}'),
+                    Text(selectedDate == null ? '截止时间: 未设置' : '截止: ${DateFormat('yyyy-MM-dd').format(selectedDate!)}'),
                     const Spacer(),
                     TextButton(
                       child: const Text('选择日期'),
@@ -700,7 +694,7 @@ class _MainPageState extends State<MainPage> {
                 decoration: const InputDecoration(labelText: '默认分类'),
               ),
               DropdownButtonFormField<Priority>(
-                value: priority,
+                initialValue: priority,
                 decoration: const InputDecoration(labelText: '默认优先级'),
                 items: Priority.values.map((p) => DropdownMenuItem(value: p, child: Text(p.label))).toList(),
                 onChanged: (val) {
