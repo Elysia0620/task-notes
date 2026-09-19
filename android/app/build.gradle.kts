@@ -13,10 +13,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
-    }
-
     defaultConfig {
         applicationId = "com.shixu.shixu"
         minSdk = 21
