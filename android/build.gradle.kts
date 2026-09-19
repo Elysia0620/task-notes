@@ -18,16 +18,23 @@ subprojects {
 }
 
 subprojects {
-    afterEvaluate {
-        if (plugins.hasPlugin("com.android.library") || plugins.hasPlugin("com.android.application")) {
-            val android = extensions.findByName("android")
-            if (android != null) {
-                try {
-                    val method = android.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
-                    method.invoke(android, 36)
-                } catch (_: Exception) {
-                }
+    val proj = this
+    val applySdk = {
+        val android = proj.extensions.findByName("android")
+        if (android != null) {
+            try {
+                val method = android.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
+                method.invoke(android, 36)
+            } catch (_: Exception) {
             }
+        }
+    }
+
+    if (proj.state.executed) {
+        applySdk()
+    } else {
+        proj.afterEvaluate {
+            applySdk()
         }
     }
 }
